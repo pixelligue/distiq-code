@@ -12,16 +12,21 @@ def test_routing():
     """Test routing decisions."""
     router = CursorRouter()
 
-    # Test cases
+    # Test cases (updated Feb 2026)
     test_cases = [
         # (messages, expected_complexity, original_model)
-        (["What is Python?"], "simple", "claude-4.5-opus-high"),
-        (["Explain how async works"], "simple", "claude-4.5-opus"),
+        (["What is Python?"], "simple", "claude-4.6-opus"),
+        (["Explain how async works"], "simple", "gpt-5.1"),
         (["Write a function to sort array"], "complex", "claude-4.5-opus"),
-        (["Implement binary search"], "complex", "gpt-4"),
-        (["Create a React component"], "complex", "claude-4.5-sonnet"),
-        (["Fix this bug in my code"], "complex", "gpt-4o"),
-        (["Read file utils.py"], "medium", "claude-4.5-opus"),
+        (["Implement binary search"], "complex", "gpt-5.2"),
+        (["Create a React component"], "complex", "gemini-3-pro"),
+        (["Fix this bug in my code"], "complex", "composer-1"),
+        (["Read file utils.py"], "medium", "claude-4.6-opus"),
+        (["Search for TODO comments"], "medium", "gpt-5.1"),
+        (["Hello"], "simple", "auto"),
+        (["Refactor this function"], "complex", "claude-4.5-sonnet"),
+        (["What does this code do?"], "simple", "gpt-4"),
+        (["Add error handling"], "complex", "gpt-5.1-codex"),
     ]
 
     print("=" * 80)

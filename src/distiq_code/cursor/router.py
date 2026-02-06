@@ -19,22 +19,60 @@ class CursorRouter:
     - Code generation → original model (claude/gpt-4)
     """
 
-    # Model pricing (approximate, per 1M tokens)
+    # Model pricing (per 1M tokens input/output, Feb 2026)
     MODEL_COSTS = {
-        "claude-4.5-opus-high": 15.0,
-        "claude-4.5-opus": 15.0,
-        "claude-4.5-sonnet": 3.0,
-        "claude-4-sonnet": 3.0,
+        # Anthropic Claude models
+        "claude-4.6-opus": 15.0,  # $5/$25
+        "claude-4.5-opus": 15.0,  # $5/$25
+        "claude-4.5-sonnet": 9.0,  # $3/$15
+        "claude-4-sonnet": 9.0,  # $3/$15
+        "claude-4-sonnet-1m": 14.25,  # $6/$22.50 (1M context)
+        "claude-4.5-haiku": 3.0,  # $1/$5
+
+        # Google Gemini models
+        "gemini-3-pro": 7.0,  # $2/$12
+        "gemini-3-flash": 1.75,  # $0.50/$3
+        "gemini-2.5-flash": 1.4,  # $0.30/$2.50
+        "gemini-2.5-flash-thinking": 1.4,
+
+        # OpenAI models
+        "gpt-5.2": 7.875,  # $1.75/$14
+        "gpt-5.1": 11.25,  # $2.50/$20
+        "gpt-5.1-codex": 0.75,  # $0.25/$1.25 (coding optimized)
+        "gpt-5-codex": 0.75,
+        "gpt-4.1": 5.0,  # Legacy
         "gpt-4o": 5.0,
         "gpt-4": 30.0,
-        "gpt-4o-mini": 0.15,
-        "cursor-small": 0.0,  # Free on Cursor
-        "deepseek-v3": 0.0,  # Free on Cursor
-        "gemini-2.5-flash": 0.0,  # Free on Cursor
+
+        # Cursor/Other models
+        "composer-1": 5.625,  # $1.25/$10
+        "grok-code": 0.85,  # $0.20/$1.50
+
+        # FREE models (no API cost on Cursor)
+        "cursor-small": 0.0,
+        "deepseek-v3": 0.0,
+        "deepseek-v3.1": 0.0,
+        "gpt-4o-mini": 0.0,  # 500 req/day limit on Free plan
+        "auto": 3.625,  # Average: $1.25/$6
     }
 
-    # Free models available on Cursor
-    FREE_MODELS = ["cursor-small", "deepseek-v3", "gemini-2.5-flash", "gpt-4o-mini"]
+    # Free models available on Cursor (no credit usage)
+    FREE_MODELS = [
+        "cursor-small",
+        "deepseek-v3",
+        "deepseek-v3.1",
+        "gpt-4o-mini",
+        "gemini-2.5-flash",  # Ultra cheap, nearly free
+    ]
+
+    # Best models for different tasks (updated Feb 2026)
+    BEST_MODELS = {
+        "simple": "cursor-small",  # Free, good for Q&A
+        "medium": "deepseek-v3.1",  # Free, fast, good for code reading
+        "complex": "claude-4.5-sonnet",  # Best quality/price for code generation
+        "reasoning": "gpt-5.2",  # For complex logic
+        "speed": "gemini-3-flash",  # Ultra fast responses
+    }
 
     # Simple question patterns
     SIMPLE_PATTERNS = [
@@ -104,25 +142,38 @@ class CursorRouter:
         if not enable_routing:
             return original_model, "routing disabled"
 
-        # Never downgrade if already using free model
+        # Never downgrade if already using free/cheap model
         if original_model in self.FREE_MODELS:
             return original_model, "already free"
 
-        # Routing rules
+        original_cost = self.MODEL_COSTS.get(original_model, 999.0)
+        if original_cost < 2.0:  # Already cheap
+            return original_model, "already cheap"
+
+        # Routing rules (updated Feb 2026)
         if complexity == "simple":
-            # Simple questions → cursor-small (free)
+            # Simple questions → cursor-small (free, unlimited)
             return "cursor-small", "simple question"
 
         elif complexity == "medium":
-            # Medium tasks (tool-use, code reading) → cursor-small
-            return "cursor-small", "medium task (tool-use)"
+            # Medium tasks (tool-use, code reading) → deepseek-v3.1 (free, fast)
+            # Alternative: cursor-small if deepseek unavailable
+            return "deepseek-v3.1", "medium task (code reading)"
 
         elif complexity == "complex":
-            # Complex tasks (code generation) → keep original
-            # But if it's super expensive (opus/gpt-4), downgrade to sonnet
-            if original_model in ("claude-4.5-opus-high", "claude-4.5-opus", "gpt-4"):
+            # Complex tasks (code generation) → best quality/price ratio
+            # Route expensive models to claude-4.5-sonnet or gpt-5.1-codex
+
+            if original_model in ("claude-4.6-opus", "claude-4.5-opus", "gpt-5.1", "gpt-5.2", "gpt-4"):
+                # Super expensive → claude-4.5-sonnet (best for code)
                 return "claude-4.5-sonnet", "complex task (downgrade to sonnet)"
+
+            elif original_model in ("gemini-3-pro", "composer-1"):
+                # Medium-expensive → gpt-5.1-codex (optimized for code, cheaper)
+                return "gpt-5.1-codex", "complex task (codex optimized)"
+
             else:
+                # Already reasonable price, keep it
                 return original_model, "complex task (keep original)"
 
         return original_model, "unknown complexity"

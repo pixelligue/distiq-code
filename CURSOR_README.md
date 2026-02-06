@@ -30,18 +30,20 @@ MITM Proxy (distiq-code)
 Cursor API
 ```
 
-### Правила роутинга
+### Правила роутинга (Feb 2026)
 
 | Запрос | Cursor выбрал | Прокси заменил | Экономия |
 |--------|---------------|----------------|----------|
-| "Что такое async?" | claude-opus $15 | cursor-small FREE | 100% |
-| "Прочитай utils.py" | claude-opus $15 | cursor-small FREE | 100% |
-| "Напиши функцию сортировки" | claude-opus $15 | claude-sonnet $3 | 80% |
-| "Исправь этот баг" | gpt-4 $30 | claude-sonnet $3 | 90% |
+| "Что такое async?" | claude-4.6-opus $15 | cursor-small FREE | 100% |
+| "Прочитай utils.py" | gpt-5.1 $11 | deepseek-v3.1 FREE | 100% |
+| "Напиши функцию сортировки" | claude-opus $15 | claude-sonnet $9 | 40% |
+| "Исправь этот баг" | gemini-pro $7 | gpt-codex $0.75 | 90% |
 
 **Простые вопросы → cursor-small (бесплатно)**
-**Чтение кода → cursor-small (бесплатно)**
-**Генерация кода → claude-sonnet (дешевле в 5x)**
+**Чтение кода → deepseek-v3.1 (бесплатно, быстро)**
+**Генерация кода → claude-sonnet или gpt-codex**
+
+Полный список моделей: [CURSOR_MODELS.md](CURSOR_MODELS.md)
 
 ---
 
