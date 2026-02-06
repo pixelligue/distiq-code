@@ -1,188 +1,188 @@
 # distiq-code
 
-> Save 3-5x on your Claude Code subscription with smart routing and caching.
+> Экономьте 3-5x на подписке Claude Code с помощью умного роутинга и кэширования.
 
-**distiq-code** is a local proxy that sits between Claude Code and the Anthropic API. It automatically routes simple tasks to cheaper models and caches repeated queries — so your $200/month Claude Max subscription lasts much longer.
+**distiq-code** — локальный прокси между Claude Code и Anthropic API. Автоматически направляет простые задачи на дешёвые модели и кэширует повторные запросы — ваша подписка Claude Max за $200/мес живёт в разы дольше.
 
 ```
-Claude Code → localhost:11434 → [Route / Cache] → api.anthropic.com
+Claude Code → localhost:11434 → [Роутинг / Кэш] → api.anthropic.com
 ```
 
-## How It Works
+## Как это работает
 
-**Smart Routing** — Most Claude Code requests don't need Opus. distiq-code analyzes each prompt and routes it to the cheapest model that can handle it:
+**Умный роутинг** — большинство запросов Claude Code не требуют Opus. distiq-code анализирует каждый промпт и направляет его на самую дешёвую модель, которая справится:
 
-| Task | Model | Cost |
-|------|-------|------|
-| Architecture, system design | Opus | $15/1M tokens |
-| Code generation, debugging | Sonnet | $3/1M (5x cheaper) |
-| Simple questions, explanations | Haiku | $0.25/1M (60x cheaper) |
+| Задача | Модель | Стоимость |
+|--------|--------|-----------|
+| Архитектура, системный дизайн | Opus | $15/1M токенов |
+| Генерация кода, отладка | Sonnet | $3/1M (в 5 раз дешевле) |
+| Простые вопросы, объяснения | Haiku | $0.25/1M (в 60 раз дешевле) |
 
-**Semantic Caching** — Similar questions get instant answers from local FAISS cache instead of hitting the API again.
+**Семантический кэш** — похожие вопросы получают мгновенный ответ из локального FAISS-кэша вместо повторного обращения к API.
 
-**Anthropic Prompt Caching** — Automatically injects `cache_control` breakpoints so repeated context (tools, system prompt) gets a 90% discount from Anthropic.
+**Anthropic Prompt Caching** — автоматически добавляет `cache_control` breakpoints, чтобы повторяющийся контекст (tools, system prompt) получал 90% скидку от Anthropic.
 
-**Live Stats** — See exactly what's happening on every request:
+**Live-статистика** — видно что происходит на каждом запросе:
 ```
 [proxy] sonnet (from opus) | 6.1K in / 795 out | $0.0303 | saved $0.1210 | 20.3s | session saved: $0.134
 [proxy] CACHE HIT (sim=0.95) | saved 342 tokens (~$0.0308) | session saved: $0.165 | 36ms
 ```
 
-## Quick Start
+## Быстрый старт
 
-### 1. Install
+### 1. Установка
 
 ```bash
 pip install distiq-code
 ```
 
-Or from source:
+Или из исходников:
 
 ```bash
-git clone https://github.com/distiq-ai/distiq-code.git
+git clone https://github.com/pixelligue/distiq-code.git
 cd distiq-code
 pip install -e .
 ```
 
-Optional ML features (semantic cache + BERT routing):
+Опциональные ML-фичи (семантический кэш + BERT-роутинг):
 
 ```bash
 pip install distiq-code[ml]          # FAISS + sentence-transformers
-pip install distiq-code[compression] # LLMLingua-2 prompt compression
-pip install distiq-code[all]         # Everything
+pip install distiq-code[compression] # LLMLingua-2 сжатие промптов
+pip install distiq-code[all]         # Всё вместе
 ```
 
-### 2. Setup
+### 2. Настройка
 
 ```bash
 distiq-code setup
 ```
 
-This will:
-- Check that Claude CLI is installed
-- Download ML models (~400 MB, if `[ml]` installed)
-- Configure `ANTHROPIC_BASE_URL` for Claude Code
+Что произойдёт:
+- Проверка установки Claude CLI
+- Загрузка ML-моделей (~400 МБ, если установлен `[ml]`)
+- Настройка `ANTHROPIC_BASE_URL` для Claude Code
 
-### 3. Start Proxy
+### 3. Запуск прокси
 
 ```bash
 distiq-code start
 ```
 
-### 4. Use Claude Code
+### 4. Использование Claude Code
 
-In another terminal:
+В другом терминале:
 
 ```bash
 claude
 ```
 
-That's it. All requests now go through the proxy automatically.
+Всё. Все запросы теперь идут через прокси автоматически.
 
-## Features
+## Возможности
 
-### Smart Model Routing
+### Умный роутинг моделей
 
-Two routing backends:
+Два бэкенда роутинга:
 
-- **ML Router** (default with `[ml]`) — BERT-based K-NN classifier over 75 reference examples. ~5ms per query.
-- **Regex Router** (fallback) — Pattern matching for RU + EN queries. Zero dependencies.
+- **ML-роутер** (по умолчанию с `[ml]`) — BERT-классификатор на основе K-NN по 75 примерам. ~5мс на запрос.
+- **Regex-роутер** (фоллбэк) — паттерн-матчинг для запросов на RU + EN. Без зависимостей.
 
-Routing only **downgrades** — if Claude Code requests Opus but the task is simple, it gets routed to Sonnet. Never upgrades.
+Роутинг только **понижает** — если Claude Code запрашивает Opus, а задача простая, она уходит на Sonnet. Никогда не повышает.
 
-### Semantic Caching
+### Семантический кэш
 
-Uses FAISS + sentence-transformers (`all-mpnet-base-v2`) to find similar queries:
+Использует FAISS + sentence-transformers (`all-mpnet-base-v2`) для поиска похожих запросов:
 
 ```
-Query 1: "How to create a React component?"
-Query 2: "How do I make a React component?" → Cache hit (sim=0.94)
+Запрос 1: "Как создать React компонент?"
+Запрос 2: "Как сделать компонент в React?" → Cache hit (sim=0.94)
 ```
 
-- Configurable similarity threshold (default: 0.85)
-- 7-day TTL
-- Up to 10,000 cached entries
-- Tool-use conversations are never cached (stale results)
+- Настраиваемый порог схожести (по умолчанию: 0.85)
+- TTL 7 дней
+- До 10 000 кэшированных записей
+- Tool-use разговоры никогда не кэшируются (устаревшие результаты)
 
 ### Anthropic Prompt Caching
 
-Automatically adds `cache_control` breakpoints to:
-1. Last tool definition
-2. System prompt
-3. Last user message
+Автоматически добавляет `cache_control` breakpoints к:
+1. Последнему определению инструмента (tool)
+2. Системному промпту
+3. Последнему сообщению пользователя
 
-Cached prefix tokens get 90% off input cost. No configuration needed.
+Закэшированные токены получают 90% скидку на input. Настройка не требуется.
 
-### Prompt Compression (Optional)
+### Сжатие промптов (опционально)
 
-With `pip install distiq-code[compression]`:
+С `pip install distiq-code[compression]`:
 
-- LLMLingua-2 compresses conversation context by up to 5x
-- Latest user query is never compressed
-- Code keywords (`def`, `class`, `import`, etc.) are preserved
+- LLMLingua-2 сжимает контекст разговора до 5x
+- Последний запрос пользователя никогда не сжимается
+- Ключевые слова кода (`def`, `class`, `import` и т.д.) сохраняются
 
-## CLI Commands
+## CLI-команды
 
 ```bash
-distiq-code start    # Start the proxy server
-distiq-code setup    # One-time setup (models + env)
-distiq-code stats    # Show usage statistics
-distiq-code config   # Show current configuration
-distiq-code chat     # Interactive chat REPL (optional)
-distiq-code version  # Show version
+distiq-code start    # Запустить прокси-сервер
+distiq-code setup    # Одноразовая настройка (модели + env)
+distiq-code stats    # Показать статистику использования
+distiq-code config   # Показать текущую конфигурацию
+distiq-code chat     # Интерактивный чат (опционально)
+distiq-code version  # Показать версию
 ```
 
-### Stats
+### Статистика
 
 ```bash
 distiq-code stats --period week
 
-# Output:
+# Вывод:
 # Requests: 347
 # Cache hits: 72%
 # Tokens saved: 1,084,000
 # Cost saved: $12.40
 ```
 
-## Configuration
+## Конфигурация
 
-All settings via environment variables or `.env` file:
+Все настройки через переменные окружения или `.env` файл:
 
 ```bash
-# Server
+# Сервер
 PROXY_HOST=127.0.0.1
 PROXY_PORT=11434
 
-# Routing
-SMART_ROUTING=true          # Enable smart model routing
-ML_ROUTING_ENABLED=true     # Use BERT router (requires [ml])
+# Роутинг
+SMART_ROUTING=true          # Умный роутинг моделей
+ML_ROUTING_ENABLED=true     # BERT-роутер (требует [ml])
 
-# Caching
+# Кэширование
 CACHE_ENABLED=true
-CACHE_TTL_HOURS=168                  # 7 days
+CACHE_TTL_HOURS=168                  # 7 дней
 CACHE_SIMILARITY_THRESHOLD=0.85
 
 # Anthropic Prompt Caching
-PROMPT_CACHING_ENABLED=true          # Inject cache_control breakpoints
+PROMPT_CACHING_ENABLED=true          # Инъекция cache_control breakpoints
 
-# Compression
+# Сжатие
 COMPRESSION_ENABLED=true
 COMPRESSION_TARGET_TOKENS=500
 
-# Debug
+# Отладка
 DEBUG=false
 LOG_LEVEL=INFO
 ```
 
-## Architecture
+## Архитектура
 
 ```
 src/distiq_code/
-├── cli.py                 # Typer CLI + chat REPL
+├── cli.py                 # Typer CLI + чат REPL
 ├── config.py              # Pydantic Settings
-├── routing.py             # Smart routing (regex + embedding)
-├── embedding_router.py    # K-NN embedding router
-├── clipboard.py           # Screenshot paste support
+├── routing.py             # Умный роутинг (regex + embedding)
+├── embedding_router.py    # K-NN embedding-роутер
+├── clipboard.py           # Вставка скриншотов
 ├── auth/
 │   └── cli_provider.py    # Claude CLI subprocess (OAuth)
 ├── cache/
@@ -190,7 +190,7 @@ src/distiq_code/
 ├── compression/
 │   └── compressor.py      # LLMLingua-2
 ├── stats/
-│   └── tracker.py         # Metrics + cost tracking
+│   └── tracker.py         # Метрики + трекинг стоимости
 └── server/
     ├── app.py             # FastAPI factory
     ├── main.py            # Uvicorn entry point
@@ -200,15 +200,15 @@ src/distiq_code/
         └── health.py      # /health, /ready
 ```
 
-## Requirements
+## Требования
 
 - Python 3.11+
-- [Claude CLI](https://docs.anthropic.com/en/docs/claude-code) installed and authenticated
+- [Claude CLI](https://docs.anthropic.com/en/docs/claude-code) установлен и авторизован
 
-## License
+## Лицензия
 
-MIT — see [LICENSE](LICENSE) for details.
+MIT — см. [LICENSE](LICENSE).
 
 ---
 
-**Made by [Distiq](https://distiq.ru)**
+**Сделано в [Distiq](https://distiq.ru)**
