@@ -92,17 +92,19 @@ claude
 
 ### Семантический кэш
 
-Использует FAISS + sentence-transformers (`all-mpnet-base-v2`) для поиска похожих запросов:
+Использует FAISS + **EmbeddingGemma-300M** (Google, 2025) для поиска похожих запросов:
 
 ```
 Запрос 1: "Как создать React компонент?"
 Запрос 2: "Как сделать компонент в React?" → Cache hit (sim=0.94)
 ```
 
+- **Matryoshka embeddings** — гибкая размерность (128/256/768)
 - Настраиваемый порог схожести (по умолчанию: 0.85)
 - TTL 7 дней
 - До 10 000 кэшированных записей
 - Tool-use разговоры никогда не кэшируются (устаревшие результаты)
+- **<200 МБ** модель (квантизация), ~10мс на CPU
 
 ### Anthropic Prompt Caching
 
@@ -186,7 +188,7 @@ src/distiq_code/
 ├── auth/
 │   └── cli_provider.py    # Claude CLI subprocess (OAuth)
 ├── cache/
-│   └── semantic_cache.py  # FAISS + sentence-transformers
+│   └── semantic_cache.py  # FAISS + EmbeddingGemma-300M (Matryoshka)
 ├── compression/
 │   └── compressor.py      # LLMLingua-2
 ├── stats/

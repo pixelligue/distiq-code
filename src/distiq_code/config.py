@@ -75,8 +75,8 @@ class Settings(BaseSettings):
         default=10000, ge=100, description="Maximum cached entries"
     )
     cache_embedding_model: str = Field(
-        default="sentence-transformers/all-mpnet-base-v2",
-        description="Sentence transformer model for embeddings",
+        default="google/embeddinggemma-300m",
+        description="Sentence transformer model for embeddings (Matryoshka-enabled)",
     )
 
     # Smart Routing
