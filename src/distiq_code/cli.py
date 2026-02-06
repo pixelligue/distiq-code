@@ -849,5 +849,136 @@ async def _chat_loop(model: str) -> None:
     console.print()
 
 
+@app.command()
+def cursor_test(
+    prompt: str = typer.Option("Hello, test message", help="Test prompt to send"),
+    model: str = typer.Option("cursor-small", help="Model: cursor-small, claude-4.5-opus-high, etc."),
+):
+    """
+    Test Cursor API connection.
+
+    Extracts tokens from Cursor database and sends a test request.
+    """
+    asyncio.run(_cursor_test(prompt, model))
+
+
+async def _cursor_test(prompt: str, model: str):
+    """Test Cursor API connectivity."""
+    from distiq_code.cursor import CursorClient
+
+    console.print("[bold blue]Testing Cursor API connection...[/bold blue]\n")
+
+    try:
+        # Initialize client (auto-extracts tokens)
+        console.print("📂 Extracting tokens from Cursor database...")
+        client = CursorClient()
+
+        console.print(f"✅ Authenticated as: [cyan]{client.tokens.email}[/cyan]")
+        console.print(f"✅ Membership: [cyan]{client.tokens.membership_type or 'unknown'}[/cyan]")
+        console.print()
+
+        # Send test request
+        console.print(f"📤 Sending request to model: [cyan]{model}[/cyan]")
+        console.print(f"💬 Prompt: [dim]{prompt}[/dim]\n")
+
+        console.print("🤖 Response:\n", style="bold")
+
+        response_text = ""
+        async for chunk in client.chat(prompt=prompt, model=model):
+            console.print(chunk, end="")
+            response_text += chunk
+
+        console.print("\n")
+        console.print(f"✅ [green]Success![/green] Received {len(response_text)} characters")
+
+        await client.close()
+
+    except FileNotFoundError as e:
+        console.print(f"❌ [red]Error:[/red] {e}")
+        console.print("\n[yellow]Make sure:[/yellow]")
+        console.print("  1. Cursor IDE is installed")
+        console.print("  2. You've logged in to Cursor")
+
+    except Exception as e:
+        console.print(f"❌ [red]Error:[/red] {e}")
+        import traceback
+        console.print(traceback.format_exc())
+
+
+@app.command()
+def cursor_proxy(
+    port: int = typer.Option(443, help="Port to run proxy on (443 for HTTPS)"),
+    passthrough: bool = typer.Option(True, help="Passthrough mode (no modifications)"),
+):
+    """
+    Start Cursor MITM proxy server.
+
+    Setup:
+        1. Run this command AS ADMINISTRATOR: distiq-code cursor-proxy
+        2. Add to hosts file (use setup_hosts.bat):
+           127.0.0.1 api2.cursor.sh
+        3. Restart Cursor IDE
+        4. All requests will go through our proxy
+
+    To restore:
+        - Run restore_hosts.bat
+        - Restart Cursor IDE
+    """
+    import os
+    import uvicorn
+    from pathlib import Path
+    from distiq_code.cursor.proxy import create_mitm_app
+
+    console.print(f"[bold blue]Starting Cursor MITM Proxy on port {port}...[/bold blue]\n")
+
+    # Check if running as admin (required for port 443)
+    if port < 1024:
+        import ctypes
+        try:
+            is_admin = ctypes.windll.shell32.IsUserAnAdmin()
+        except:
+            is_admin = os.geteuid() == 0 if hasattr(os, 'geteuid') else False
+
+        if not is_admin:
+            console.print("[red]ERROR: Port 443 requires Administrator privileges![/red]")
+            console.print("Please run as Administrator (right-click → Run as Administrator)\n")
+            raise typer.Exit(1)
+
+    console.print("[yellow]Setup Instructions:[/yellow]")
+    console.print("1. Add this line to your hosts file:")
+    console.print("   [cyan]127.0.0.1 api2.cursor.sh[/cyan]")
+    console.print("\n   Quick setup: Run [cyan]setup_hosts.bat[/cyan] as Administrator")
+    console.print("\n2. Restart Cursor IDE")
+    console.print("3. Cursor traffic will flow through this proxy\n")
+
+    console.print(f"[green]Proxy mode:[/green] {'Passthrough (no modifications)' if passthrough else 'Smart routing'}\n")
+
+    # Check for SSL certificate
+    cert_path = Path("cursor_cert.pem")
+    key_path = Path("cursor_key.pem")
+
+    if not cert_path.exists() or not key_path.exists():
+        console.print("[yellow]SSL certificate not found. Generating...[/yellow]")
+        from distiq_code.cursor.ssl_gen import generate_ssl_cert
+        generate_ssl_cert()
+        console.print("[green]SSL certificate generated![/green]\n")
+
+    console.print("[dim]Press Ctrl+C to stop[/dim]\n")
+
+    # Create FastAPI app
+    enable_routing = not passthrough
+    app_instance = create_mitm_app(enable_routing=enable_routing)
+
+    # Run with uvicorn (HTTPS)
+    uvicorn.run(
+        app_instance,
+        host="127.0.0.1",
+        port=port,
+        ssl_keyfile=str(key_path),
+        ssl_certfile=str(cert_path),
+        log_level="info",
+    )
+
+
 if __name__ == "__main__":
     app()
