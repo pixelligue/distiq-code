@@ -738,11 +738,24 @@ async def messages_proxy(request: Request):
     user_text = _extract_latest_user_text(messages)
 
     # --- Smart Routing ---
-    # Always route — even tool_use conversations benefit from sonnet vs opus.
-    # Only caching is skipped for tool exchanges (stale results).
     routed_model = original_model
     original_tier = _model_id_to_tier(original_model)
-    if settings.smart_routing and user_text:
+
+    # Tool-use forced routing: agentic loops (Read, Glob, Grep, Bash, MCP)
+    # always go to Sonnet. Opus is wasted on tool execution — Sonnet handles
+    # file reads, searches, and command runs just as well at 5x less cost.
+    if has_tool_msgs and original_tier == "opus":
+        tier = "sonnet"
+        new_model = _tier_to_model_id(tier, original_model)
+        logger.info(
+            f"[routing] {original_model} -> {new_model} "
+            f"(tool-use loop, forced sonnet)"
+        )
+        routed_model = new_model
+        _strip_thinking(body)
+
+    # Text-based routing for non-tool messages
+    elif settings.smart_routing and user_text:
         tier, complexity = classify_and_route(
             user_text, len(messages), original_tier
         )
