@@ -148,7 +148,7 @@ The project uses optional dependency groups to keep the base install lightweight
 | Group | Packages | Purpose |
 |-------|----------|---------|
 | `ml` | sentence-transformers, faiss-cpu, Pillow | Semantic cache (EmbeddingGemma-300M), ML routing, clipboard |
-| `compression` | llmlingua | LLMLingua-2 prompt compression |
+| `compression` | llmlingua | LLMLingua-2 BERT-base (440MB, code-optimized) |
 | `all` | ml + compression | Everything |
 | `dev` | pytest, black, ruff, mypy | Development tools |
 

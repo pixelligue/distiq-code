@@ -61,8 +61,8 @@ class Settings(BaseSettings):
         default=500, ge=100, description="Target token count after compression"
     )
     compression_model: str = Field(
-        default="microsoft/llmlingua-2-xlm-roberta-large-meetingbank",
-        description="LLMLingua model name",
+        default="microsoft/llmlingua-2-bert-base-multilingual-cased-meetingbank",
+        description="LLMLingua-2 model (BERT-base: 440MB, 3-6x faster)",
     )
 
     # Caching
