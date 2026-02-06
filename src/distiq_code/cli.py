@@ -380,10 +380,192 @@ def config():
 @app.command()
 def chat(
     model: str = typer.Option("sonnet", help="Model: opus, sonnet, haiku"),
+    smart: bool = typer.Option(False, "--smart", "-s", help="Enable smart mode (auto-index + context)"),
 ):
     """Interactive chat with optimization (compression + caching)."""
     _suppress_logging()
-    asyncio.run(_chat_loop(model))
+    
+    if smart:
+        asyncio.run(_smart_chat_loop(model))
+    else:
+        asyncio.run(_chat_loop(model))
+
+
+@app.command()
+def agent(
+    model: str = typer.Option("sonnet", help="Default model for complex tasks"),
+    budget: float = typer.Option(None, "--budget", "-b", help="Monthly budget in USD"),
+):
+    """
+    Smart AI agent with full automation.
+    
+    Features:
+    - Auto-indexes your codebase
+    - Retrieves relevant code context  
+    - Routes to optimal model
+    - Tracks costs
+    
+    This is the recommended mode for coding assistance.
+    
+    Example:
+        distiq-code agent
+        distiq-code agent --budget 25
+    """
+    _suppress_logging()
+    asyncio.run(_smart_chat_loop(model, monthly_budget=budget))
+
+
+async def _smart_chat_loop(model: str, monthly_budget: float | None = None) -> None:
+    """Smart chat loop with Orchestrator."""
+    import io
+    from pathlib import Path
+    
+    from distiq_code.config import settings
+    from distiq_code.orchestrator import Orchestrator, OrchestratorConfig
+    
+    console.clear()
+    console.print()
+    
+    # Configure orchestrator
+    config = OrchestratorConfig(
+        auto_index=True,
+        watch_files=True,
+        enable_routing=True,
+        enable_cache=settings.cache_enabled,
+        monthly_budget_usd=monthly_budget,
+    )
+    
+    project_dir = Path.cwd()
+    
+    console.print(f"[bold blue]distiq-code agent[/bold blue] · {project_dir.name}")
+    console.print("[dim]Auto-indexing · Smart routing · Context-aware[/dim]")
+    console.print("[dim]/help for commands · Ctrl+C to exit[/dim]")
+    console.print()
+    
+    # Initialize orchestrator
+    with console.status("[dim]Initializing...[/dim]", spinner="dots"):
+        orchestrator = Orchestrator(project_dir, config)
+        await orchestrator.initialize()
+    
+    # Session stats
+    session_requests = 0
+    session_cost = 0.0
+    
+    messages: list[dict] = []
+    
+    while True:
+        try:
+            user_input = console.input("[bold cyan]>[/bold cyan] ")
+        except (KeyboardInterrupt, EOFError):
+            console.print()
+            break
+        
+        user_input = user_input.strip()
+        if not user_input:
+            continue
+        
+        # Slash commands
+        if user_input.startswith("/"):
+            cmd = user_input.split()[0].lower()
+            
+            if cmd in ("/quit", "/exit", "/q"):
+                break
+            elif cmd == "/clear":
+                messages.clear()
+                console.print("[dim]History cleared[/dim]")
+                continue
+            elif cmd == "/stats":
+                console.print(f"\n[bold]Session Stats[/bold]")
+                console.print(f"  Requests: {session_requests}")
+                console.print(f"  Cost: ${session_cost:.4f}")
+                if monthly_budget:
+                    remaining = monthly_budget - session_cost
+                    console.print(f"  Budget remaining: ${remaining:.2f}")
+                console.print()
+                continue
+            elif cmd == "/index":
+                with console.status("[dim]Re-indexing...[/dim]"):
+                    indexer = orchestrator._get_indexer()
+                    stats = indexer.index(show_progress=False)
+                console.print(f"[green]✓[/green] Indexed {stats.get('total_chunks', 0)} chunks")
+                continue
+            elif cmd == "/context":
+                # Show what context would be retrieved
+                query = user_input.replace("/context", "").strip() or "show context"
+                context = await orchestrator._build_context(query)
+                if context and context.chunks:
+                    console.print(f"\n[bold]Context ({len(context.chunks)} chunks, ~{context.total_tokens} tokens)[/bold]\n")
+                    for chunk in context.chunks[:5]:
+                        console.print(f"  [{chunk.chunk_type}] [cyan]{chunk.name}[/cyan]")
+                        console.print(f"    {chunk.file_path}:{chunk.start_line}")
+                else:
+                    console.print("[dim]No relevant context found[/dim]")
+                console.print()
+                continue
+            elif cmd == "/help":
+                console.print("""
+[bold]Commands:[/bold]
+  /quit, /q     Exit
+  /clear        Clear conversation history
+  /stats        Show session statistics
+  /index        Re-index the codebase
+  /context      Preview context for a query
+  /help         Show this help
+""")
+                continue
+        
+        # Process with orchestrator
+        console.print()
+        
+        with console.status("[dim]Thinking...[/dim]", spinner="dots") as status:
+            try:
+                result = await orchestrator.process(
+                    user_input,
+                    messages=messages if messages else None,
+                )
+                
+                # Update status with info
+                if result.context_chunks > 0:
+                    status.update(f"[dim]Found {result.context_chunks} relevant files...[/dim]")
+                
+            except Exception as e:
+                console.print(f"[red]Error:[/red] {e}")
+                continue
+        
+        # Display response
+        console.print(result.content)
+        console.print()
+        
+        # Stats line
+        stats_parts = [
+            f"[dim]{result.model_used}[/dim]",
+            f"[dim]{result.input_tokens}+{result.output_tokens} tokens[/dim]",
+            f"[dim]${result.cost_usd:.4f}[/dim]",
+        ]
+        if result.context_chunks > 0:
+            stats_parts.append(f"[dim]{result.context_chunks} context chunks[/dim]")
+        if result.was_cached:
+            stats_parts.append("[green]cached[/green]")
+        
+        console.print(" · ".join(stats_parts))
+        console.print()
+        
+        # Update history
+        messages.append({"role": "user", "content": user_input})
+        messages.append({"role": "assistant", "content": result.content})
+        
+        # Update session stats
+        session_requests += 1
+        session_cost += result.cost_usd
+    
+    # Cleanup
+    await orchestrator.close()
+    
+    # Final stats
+    console.print(f"\n[bold]Session complete[/bold]")
+    console.print(f"  Requests: {session_requests}")
+    console.print(f"  Total cost: ${session_cost:.4f}")
+
 
 
 def _suppress_logging():
@@ -466,6 +648,213 @@ def _format_tool_event(event) -> str:
     else:
         return f"{name}..."
 
+
+# ============================================================================
+# Code Indexing Commands
+# ============================================================================
+
+@app.command()
+def index(
+    directory: str = typer.Argument(".", help="Directory to index (default: current)"),
+    watch: bool = typer.Option(False, "--watch", "-w", help="Watch for changes after indexing"),
+):
+    """
+    Index a codebase for smart context retrieval.
+    
+    This enables:
+    - Semantic code search
+    - Automatic context building for prompts
+    - 90%+ token reduction
+    
+    Example:
+        distiq-code index .
+        distiq-code index --watch
+    """
+    from pathlib import Path
+    from rich.progress import Progress, SpinnerColumn, TextColumn
+    
+    project_dir = Path(directory).resolve()
+    
+    if not project_dir.exists():
+        console.print(f"[red]Error:[/red] Directory not found: {project_dir}")
+        raise typer.Exit(1)
+    
+    console.print(f"[bold blue]Indexing:[/bold blue] {project_dir}\n")
+    
+    try:
+        from distiq_code.indexing import get_indexer
+        
+        with Progress(
+            SpinnerColumn(),
+            TextColumn("[progress.description]{task.description}"),
+            console=console,
+        ) as progress:
+            task = progress.add_task("Loading indexer...", total=None)
+            
+            indexer = get_indexer(project_dir)
+            
+            progress.update(task, description="Parsing code files...")
+            stats = indexer.index(show_progress=False)
+            
+            progress.update(task, description="Done!", completed=True)
+        
+        console.print()
+        console.print("[bold green]✓ Indexing complete![/bold green]")
+        console.print(f"  Files: {stats.get('total_files', 0)}")
+        console.print(f"  Chunks: {stats.get('total_chunks', 0)}")
+        console.print(f"  Vectors: {stats.get('total_vectors', 0)}")
+        console.print()
+        
+        if watch:
+            console.print("[dim]Watching for changes... (Ctrl+C to stop)[/dim]")
+            _watch_and_reindex(indexer, project_dir)
+            
+    except ImportError as e:
+        console.print(f"[red]Error:[/red] Missing dependencies: {e}")
+        console.print("\n[yellow]Install with:[/yellow]")
+        console.print("  pip install sentence-transformers faiss-cpu tree-sitter-python")
+        raise typer.Exit(1)
+
+
+def _watch_and_reindex(indexer, project_dir):
+    """Watch for file changes and re-index."""
+    try:
+        from watchdog.observers import Observer
+        from watchdog.events import FileSystemEventHandler
+        
+        class ReindexHandler(FileSystemEventHandler):
+            def __init__(self):
+                self.pending = set()
+                
+            def on_modified(self, event):
+                if event.is_directory:
+                    return
+                ext = Path(event.src_path).suffix.lower()
+                if ext in ('.py', '.js', '.ts', '.jsx', '.tsx', '.go', '.rs'):
+                    self.pending.add(event.src_path)
+        
+        handler = ReindexHandler()
+        observer = Observer()
+        observer.schedule(handler, str(project_dir), recursive=True)
+        observer.start()
+        
+        import time
+        try:
+            while True:
+                time.sleep(2)
+                if handler.pending:
+                    console.print(f"[dim]Re-indexing {len(handler.pending)} files...[/dim]")
+                    indexer.update()
+                    handler.pending.clear()
+        except KeyboardInterrupt:
+            observer.stop()
+        observer.join()
+        
+    except ImportError:
+        console.print("[yellow]Install watchdog for file watching: pip install watchdog[/yellow]")
+
+
+@app.command("index-stats")
+def index_stats(
+    directory: str = typer.Argument(".", help="Project directory"),
+):
+    """
+    Show indexing statistics.
+    
+    Displays:
+    - Number of indexed files and chunks
+    - Index size
+    - Embedding model info
+    """
+    from pathlib import Path
+    
+    project_dir = Path(directory).resolve()
+    index_dir = project_dir / ".distiq-code"
+    
+    if not index_dir.exists():
+        console.print("[yellow]No index found.[/yellow] Run: distiq-code index")
+        raise typer.Exit(1)
+    
+    try:
+        from distiq_code.indexing import get_indexer
+        
+        indexer = get_indexer(project_dir)
+        stats = indexer.get_stats()
+        
+        console.print("[bold blue]Index Statistics[/bold blue]\n")
+        console.print(f"  Project:    {project_dir}")
+        console.print(f"  Files:      {stats.get('total_files', 0)}")
+        console.print(f"  Chunks:     {stats.get('total_chunks', 0)}")
+        console.print(f"  Vectors:    {stats.get('total_vectors', 0)}")
+        console.print(f"  Dimensions: {stats.get('embedding_dim', 0)}")
+        
+        # Index size
+        faiss_file = index_dir / "index.faiss"
+        db_file = index_dir / "metadata.db"
+        
+        total_size = 0
+        if faiss_file.exists():
+            total_size += faiss_file.stat().st_size
+        if db_file.exists():
+            total_size += db_file.stat().st_size
+            
+        console.print(f"  Size:       {total_size / 1024 / 1024:.1f} MB")
+        console.print()
+        
+    except Exception as e:
+        console.print(f"[red]Error:[/red] {e}")
+        raise typer.Exit(1)
+
+
+@app.command()
+def search(
+    query: str = typer.Argument(..., help="Search query"),
+    directory: str = typer.Option(".", "--dir", "-d", help="Project directory"),
+    limit: int = typer.Option(5, "--limit", "-n", help="Number of results"),
+):
+    """
+    Search indexed codebase.
+    
+    Example:
+        distiq-code search "authentication"
+        distiq-code search "database connection" -n 10
+    """
+    from pathlib import Path
+    
+    project_dir = Path(directory).resolve()
+    
+    try:
+        from distiq_code.indexing import get_indexer
+        
+        indexer = get_indexer(project_dir)
+        results = indexer.search(query, k=limit)
+        
+        if not results:
+            console.print(f"[yellow]No results for:[/yellow] {query}")
+            return
+        
+        console.print(f"\n[bold blue]Search results for:[/bold blue] {query}\n")
+        
+        for i, result in enumerate(results, 1):
+            score = result.get("score", 0)
+            file_path = result.get("file_path", "")
+            name = result.get("name", "")
+            chunk_type = result.get("chunk_type", "")
+            lines = f"{result.get('start_line', 0)}-{result.get('end_line', 0)}"
+            
+            console.print(f"[bold]{i}.[/bold] [{chunk_type}] [cyan]{name}[/cyan]")
+            console.print(f"   {file_path}:{lines}")
+            console.print(f"   Score: {score:.2f}")
+            console.print()
+            
+    except Exception as e:
+        console.print(f"[red]Error:[/red] {e}")
+        raise typer.Exit(1)
+
+
+# ============================================================================
+# Chat Command
+# ============================================================================
 
 async def _chat_loop(model: str) -> None:
     """Async REPL for interactive chat."""
@@ -847,137 +1236,6 @@ async def _chat_loop(model: str) -> None:
             )
     console.print(" [dim]Bye![/dim]")
     console.print()
-
-
-@app.command()
-def cursor_test(
-    prompt: str = typer.Option("Hello, test message", help="Test prompt to send"),
-    model: str = typer.Option("cursor-small", help="Model: cursor-small, claude-4.5-opus-high, etc."),
-):
-    """
-    Test Cursor API connection.
-
-    Extracts tokens from Cursor database and sends a test request.
-    """
-    asyncio.run(_cursor_test(prompt, model))
-
-
-async def _cursor_test(prompt: str, model: str):
-    """Test Cursor API connectivity."""
-    from distiq_code.cursor import CursorClient
-
-    console.print("[bold blue]Testing Cursor API connection...[/bold blue]\n")
-
-    try:
-        # Initialize client (auto-extracts tokens)
-        console.print("📂 Extracting tokens from Cursor database...")
-        client = CursorClient()
-
-        console.print(f"✅ Authenticated as: [cyan]{client.tokens.email}[/cyan]")
-        console.print(f"✅ Membership: [cyan]{client.tokens.membership_type or 'unknown'}[/cyan]")
-        console.print()
-
-        # Send test request
-        console.print(f"📤 Sending request to model: [cyan]{model}[/cyan]")
-        console.print(f"💬 Prompt: [dim]{prompt}[/dim]\n")
-
-        console.print("🤖 Response:\n", style="bold")
-
-        response_text = ""
-        async for chunk in client.chat(prompt=prompt, model=model):
-            console.print(chunk, end="")
-            response_text += chunk
-
-        console.print("\n")
-        console.print(f"✅ [green]Success![/green] Received {len(response_text)} characters")
-
-        await client.close()
-
-    except FileNotFoundError as e:
-        console.print(f"❌ [red]Error:[/red] {e}")
-        console.print("\n[yellow]Make sure:[/yellow]")
-        console.print("  1. Cursor IDE is installed")
-        console.print("  2. You've logged in to Cursor")
-
-    except Exception as e:
-        console.print(f"❌ [red]Error:[/red] {e}")
-        import traceback
-        console.print(traceback.format_exc())
-
-
-@app.command()
-def cursor_proxy(
-    port: int = typer.Option(443, help="Port to run proxy on (443 for HTTPS)"),
-    passthrough: bool = typer.Option(True, help="Passthrough mode (no modifications)"),
-):
-    """
-    Start Cursor MITM proxy server.
-
-    Setup:
-        1. Run this command AS ADMINISTRATOR: distiq-code cursor-proxy
-        2. Add to hosts file (use setup_hosts.bat):
-           127.0.0.1 api2.cursor.sh
-        3. Restart Cursor IDE
-        4. All requests will go through our proxy
-
-    To restore:
-        - Run restore_hosts.bat
-        - Restart Cursor IDE
-    """
-    import os
-    import uvicorn
-    from pathlib import Path
-    from distiq_code.cursor.proxy import create_mitm_app
-
-    console.print(f"[bold blue]Starting Cursor MITM Proxy on port {port}...[/bold blue]\n")
-
-    # Check if running as admin (required for port 443)
-    if port < 1024:
-        import ctypes
-        try:
-            is_admin = ctypes.windll.shell32.IsUserAnAdmin()
-        except:
-            is_admin = os.geteuid() == 0 if hasattr(os, 'geteuid') else False
-
-        if not is_admin:
-            console.print("[red]ERROR: Port 443 requires Administrator privileges![/red]")
-            console.print("Please run as Administrator (right-click → Run as Administrator)\n")
-            raise typer.Exit(1)
-
-    console.print("[yellow]Setup Instructions:[/yellow]")
-    console.print("1. Add this line to your hosts file:")
-    console.print("   [cyan]127.0.0.1 api2.cursor.sh[/cyan]")
-    console.print("\n   Quick setup: Run [cyan]setup_hosts.bat[/cyan] as Administrator")
-    console.print("\n2. Restart Cursor IDE")
-    console.print("3. Cursor traffic will flow through this proxy\n")
-
-    console.print(f"[green]Proxy mode:[/green] {'Passthrough (no modifications)' if passthrough else 'Smart routing'}\n")
-
-    # Check for SSL certificate
-    cert_path = Path("cursor_cert.pem")
-    key_path = Path("cursor_key.pem")
-
-    if not cert_path.exists() or not key_path.exists():
-        console.print("[yellow]SSL certificate not found. Generating...[/yellow]")
-        from distiq_code.cursor.ssl_gen import generate_ssl_cert
-        generate_ssl_cert()
-        console.print("[green]SSL certificate generated![/green]\n")
-
-    console.print("[dim]Press Ctrl+C to stop[/dim]\n")
-
-    # Create FastAPI app
-    enable_routing = not passthrough
-    app_instance = create_mitm_app(enable_routing=enable_routing)
-
-    # Run with uvicorn (HTTPS)
-    uvicorn.run(
-        app_instance,
-        host="127.0.0.1",
-        port=port,
-        ssl_keyfile=str(key_path),
-        ssl_certfile=str(cert_path),
-        log_level="info",
-    )
 
 
 if __name__ == "__main__":

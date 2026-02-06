@@ -92,11 +92,25 @@ class Settings(BaseSettings):
         default=True, description="Inject cache_control breakpoints for Anthropic prompt caching (90% input savings)"
     )
 
+    # Tool Compression (inspired by ClaudeSlim)
+    tool_compression_enabled: bool = Field(
+        default=False, description="Compress tool definitions (names + params) to save 500-1000 tokens per request"
+    )
+
     # Anthropic API forwarding
     anthropic_api_base: str = Field(
         default="https://api.anthropic.com",
         description="Anthropic API base URL for forwarding",
     )
+
+    # API Keys (loaded from .env)
+    anthropic_api_key: str | None = Field(default=None, description="Anthropic API key")
+    openrouter_api_key: str | None = Field(default=None, description="OpenRouter API key")
+    deepseek_api_key: str | None = Field(default=None, description="DeepSeek API key")
+    jina_api_key: str | None = Field(default=None, description="Jina AI API key (search + embeddings)")
+    voyage_api_key: str | None = Field(default=None, description="Voyage AI API key (embeddings)")
+    tavily_api_key: str | None = Field(default=None, description="Tavily API key (web search)")
+
 
     # Paths
     @property

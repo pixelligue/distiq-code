@@ -853,6 +853,19 @@ async def messages_proxy(request: Request):
     # Update model in body if routing changed it
     body["model"] = routed_model
 
+    # Tool compression (optional, inspired by ClaudeSlim)
+    if settings.tool_compression_enabled and body.get("tools"):
+        try:
+            from distiq_code.compression.tool_compressor import compress_tools
+            compressed_tools, orig_tokens, comp_tokens = compress_tools(body["tools"])
+            body["tools"] = compressed_tools
+            logger.debug(
+                f"Tool compression: {orig_tokens} → {comp_tokens} tokens "
+                f"(saved {orig_tokens - comp_tokens})"
+            )
+        except Exception as e:
+            logger.warning(f"Tool compression failed, using original: {e}")
+
     # Inject Anthropic prompt caching breakpoints
     if settings.prompt_caching_enabled:
         _inject_cache_control(body)

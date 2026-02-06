@@ -1,6 +1,6 @@
 [project]
 name = "distiq-code"
-version = "0.1.0"
+version = "0.1.1"
 description = "CLI proxy for optimizing AI coding assistant token usage via smart routing and caching"
 authors = [
     {name = "Distiq Team", email = "hello@distiq.ru"}
